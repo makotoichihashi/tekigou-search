@@ -203,6 +203,7 @@ def parse_year_range_from_text(value):
         start_year = converted_years[0]
 
         if len(converted_years) >= 2:
+
             end_year = converted_years[-1]
 
         else:
@@ -213,7 +214,6 @@ def parse_year_range_from_text(value):
                 text.rstrip().endswith("～")
             ):
                 end_year = 9999
-
             else:
                 end_year = start_year
 
@@ -234,6 +234,7 @@ def parse_year_range_from_text(value):
         start_year = western_years[0]
 
         if len(western_years) >= 2:
+
             end_year = western_years[-1]
 
         else:
@@ -244,7 +245,6 @@ def parse_year_range_from_text(value):
                 text.rstrip().endswith("～")
             ):
                 end_year = 9999
-
             else:
                 end_year = start_year
 
@@ -322,7 +322,6 @@ def filter_by_year(
 
     if target_year is None:
         return df
-
 
     def check_row(row):
 
@@ -431,7 +430,6 @@ def filter_by_year(
 
         return False
 
-
     mask = df.apply(
         check_row,
         axis=1
@@ -475,6 +473,46 @@ def get_quality(row):
 
 
 # ============================================================
+# セッション初期化
+# ============================================================
+
+if "searched" not in st.session_state:
+    st.session_state["searched"] = False
+
+if "page" not in st.session_state:
+    st.session_state["page"] = 1
+
+
+# ============================================================
+# 条件リセット
+# ============================================================
+
+def reset_search_conditions():
+
+    keys = [
+        "vehicle_maker",
+        "car_name",
+        "year_select",
+        "year_input",
+        "model_keyword",
+        "product_maker",
+        "category",
+        "product_code",
+        "product_name",
+        "searched",
+        "page"
+    ]
+
+    for key in keys:
+
+        if key in st.session_state:
+            del st.session_state[key]
+
+    st.session_state["searched"] = False
+    st.session_state["page"] = 1
+
+
+# ============================================================
 # DB確認
 # ============================================================
 
@@ -510,11 +548,24 @@ st.write(
 
 
 # ============================================================
-# 検索フォーム
+# メーカー候補
 # ============================================================
 
-search_base_df = df.copy()
+makers = sorted(
+    [
+        clean_text(x)
+        for x in
+        df[
+            "メーカー"
+        ].unique()
+        if clean_text(x)
+    ]
+)
 
+
+# ============================================================
+# 検索フォーム
+# ============================================================
 
 with st.form(
     "search_form"
@@ -535,28 +586,21 @@ with st.form(
 
     with col1:
 
-        makers = sorted(
-            [
-                clean_text(x)
-                for x in
-                df[
-                    "メーカー"
-                ].unique()
-                if clean_text(x)
-            ]
-        )
-
         selected_maker = st.selectbox(
             "車両メーカー",
             [
                 "指定なし"
             ]
             +
-            makers
+            makers,
+            key="vehicle_maker"
         )
 
 
-    # メーカー選択に応じて車種候補を作成
+    # ========================================================
+    # メーカー → 車種候補
+    # ========================================================
+
     car_source_df = df.copy()
 
     if selected_maker != "指定なし":
@@ -572,22 +616,23 @@ with st.form(
         ]
 
 
+    cars = sorted(
+        [
+            clean_text(x)
+            for x in
+            car_source_df[
+                "車種"
+            ].unique()
+            if clean_text(x)
+        ]
+    )
+
+
     # --------------------------------------------------------
     # 車種
     # --------------------------------------------------------
 
     with col2:
-
-        cars = sorted(
-            [
-                clean_text(x)
-                for x in
-                car_source_df[
-                    "車種"
-                ].unique()
-                if clean_text(x)
-            ]
-        )
 
         selected_car = st.selectbox(
             "車種",
@@ -595,21 +640,90 @@ with st.form(
                 "指定なし"
             ]
             +
-            cars
+            cars,
+            key="car_name"
         )
 
 
+    # ========================================================
+    # メーカー・車種 → 年式候補
+    # ========================================================
+
+    year_source_df = car_source_df.copy()
+
+    if selected_car != "指定なし":
+
+        year_source_df = year_source_df[
+            year_source_df[
+                "車種"
+            ].map(
+                clean_text
+            )
+            ==
+            selected_car
+        ]
+
+
+    year_candidates = []
+
+
+    if "年式原文" in year_source_df.columns:
+
+        year_candidates.extend(
+            [
+                clean_text(x)
+                for x in
+                year_source_df[
+                    "年式原文"
+                ].unique()
+                if clean_text(x)
+            ]
+        )
+
+
+    if "年式" in year_source_df.columns:
+
+        year_candidates.extend(
+            [
+                clean_text(x)
+                for x in
+                year_source_df[
+                    "年式"
+                ].unique()
+                if clean_text(x)
+            ]
+        )
+
+
+    year_candidates = sorted(
+        list(
+            dict.fromkeys(
+                year_candidates
+            )
+        )
+    )
+
+
     # --------------------------------------------------------
-    # 年式
+    # 年式候補
     # --------------------------------------------------------
 
     with col3:
 
-        year_input = st.text_input(
-            "年式",
-            placeholder="例：2026 / R8 / H30"
+        selected_year_text = st.selectbox(
+            "年式候補",
+            [
+                "指定なし"
+            ]
+            +
+            year_candidates,
+            key="year_select"
         )
 
+
+    # ========================================================
+    # 2段目
+    # ========================================================
 
     col4, col5, col6 = st.columns(
         3
@@ -617,14 +731,28 @@ with st.form(
 
 
     # --------------------------------------------------------
-    # 型式
+    # 年式手入力
     # --------------------------------------------------------
 
     with col4:
 
+        year_input = st.text_input(
+            "年式を直接入力",
+            placeholder="例：2026 / R8 / H30",
+            key="year_input"
+        )
+
+
+    # --------------------------------------------------------
+    # 型式
+    # --------------------------------------------------------
+
+    with col5:
+
         model_keyword = st.text_input(
             "型式",
-            placeholder="例：TRH200V"
+            placeholder="例：TRH200V",
+            key="model_keyword"
         )
 
 
@@ -632,7 +760,7 @@ with st.form(
     # 商品メーカー
     # --------------------------------------------------------
 
-    with col5:
+    with col6:
 
         selected_product_maker = (
             st.selectbox(
@@ -642,27 +770,38 @@ with st.form(
                     "Pioneer",
                     "ALPINE",
                     "KENWOOD"
-                ]
+                ],
+                key="product_maker"
             )
         )
+
+
+    # ========================================================
+    # 3段目
+    # ========================================================
+
+    col7, col8, col9 = st.columns(
+        3
+    )
 
 
     # --------------------------------------------------------
     # カテゴリ
     # --------------------------------------------------------
 
-    with col6:
+    categories = sorted(
+        [
+            clean_text(x)
+            for x in
+            df[
+                "カテゴリ"
+            ].unique()
+            if clean_text(x)
+        ]
+    )
 
-        categories = sorted(
-            [
-                clean_text(x)
-                for x in
-                df[
-                    "カテゴリ"
-                ].unique()
-                if clean_text(x)
-            ]
-        )
+
+    with col7:
 
         selected_category = st.selectbox(
             "カテゴリ",
@@ -670,24 +809,21 @@ with st.form(
                 "指定なし"
             ]
             +
-            categories
+            categories,
+            key="category"
         )
-
-
-    col7, col8 = st.columns(
-        2
-    )
 
 
     # --------------------------------------------------------
     # 商品型番
     # --------------------------------------------------------
 
-    with col7:
+    with col8:
 
         product_code = st.text_input(
             "商品型番",
-            placeholder="例：AVIC-RF722"
+            placeholder="例：AVIC-RF722",
+            key="product_code"
         )
 
 
@@ -695,11 +831,12 @@ with st.form(
     # 商品名
     # --------------------------------------------------------
 
-    with col8:
+    with col9:
 
         product_name = st.text_input(
             "商品名",
-            placeholder="商品名の一部でも検索できます"
+            placeholder="商品名の一部でも検索できます",
+            key="product_name"
         )
 
 
@@ -711,10 +848,23 @@ with st.form(
 
 
 # ============================================================
+# 検索実行フラグ
+# ============================================================
+
+if submitted:
+
+    st.session_state["searched"] = True
+    st.session_state["page"] = 1
+
+
+# ============================================================
 # 検索前
 # ============================================================
 
-if not submitted:
+if not st.session_state.get(
+    "searched",
+    False
+):
 
     st.info(
         "検索条件を入力して「検索」を押してください。"
@@ -730,6 +880,10 @@ if not submitted:
 search_df = df.copy()
 
 
+# ------------------------------------------------------------
+# 車両メーカー
+# ------------------------------------------------------------
+
 if selected_maker != "指定なし":
 
     search_df = search_df[
@@ -742,6 +896,10 @@ if selected_maker != "指定なし":
         selected_maker
     ]
 
+
+# ------------------------------------------------------------
+# 車種
+# ------------------------------------------------------------
 
 if selected_car != "指定なし":
 
@@ -756,6 +914,54 @@ if selected_car != "指定なし":
     ]
 
 
+# ------------------------------------------------------------
+# 年式候補
+# ------------------------------------------------------------
+
+if selected_year_text != "指定なし":
+
+    year_mask = pd.Series(
+        False,
+        index=search_df.index
+    )
+
+    if "年式原文" in search_df.columns:
+
+        year_mask = (
+            year_mask
+            |
+            search_df[
+                "年式原文"
+            ].map(
+                clean_text
+            ).eq(
+                selected_year_text
+            )
+        )
+
+    if "年式" in search_df.columns:
+
+        year_mask = (
+            year_mask
+            |
+            search_df[
+                "年式"
+            ].map(
+                clean_text
+            ).eq(
+                selected_year_text
+            )
+        )
+
+    search_df = search_df[
+        year_mask
+    ]
+
+
+# ------------------------------------------------------------
+# 年式手入力
+# ------------------------------------------------------------
+
 if year_input:
 
     target_year = convert_year_input(
@@ -765,7 +971,7 @@ if year_input:
     if target_year is None:
 
         st.warning(
-            "年式を判定できません。年式条件を無視しました。"
+            "年式を判定できません。年式手入力条件を無視しました。"
         )
 
     else:
@@ -776,24 +982,51 @@ if year_input:
         )
 
 
+# ------------------------------------------------------------
+# 型式
+# ------------------------------------------------------------
+
 if model_keyword:
 
+    model_mask = pd.Series(
+        False,
+        index=search_df.index
+    )
+
+    if "実型式" in search_df.columns:
+
+        model_mask = (
+            model_mask
+            |
+            contains_value(
+                search_df[
+                    "実型式"
+                ],
+                model_keyword
+            )
+        )
+
+    if "型式" in search_df.columns:
+
+        model_mask = (
+            model_mask
+            |
+            contains_value(
+                search_df[
+                    "型式"
+                ],
+                model_keyword
+            )
+        )
+
     search_df = search_df[
-        contains_value(
-            search_df[
-                "実型式"
-            ],
-            model_keyword
-        )
-        |
-        contains_value(
-            search_df[
-                "型式"
-            ],
-            model_keyword
-        )
+        model_mask
     ]
 
+
+# ------------------------------------------------------------
+# 商品メーカー
+# ------------------------------------------------------------
 
 if selected_product_maker != "指定なし":
 
@@ -808,6 +1041,10 @@ if selected_product_maker != "指定なし":
     ]
 
 
+# ------------------------------------------------------------
+# カテゴリ
+# ------------------------------------------------------------
+
 if selected_category != "指定なし":
 
     search_df = search_df[
@@ -821,6 +1058,10 @@ if selected_category != "指定なし":
     ]
 
 
+# ------------------------------------------------------------
+# 商品型番
+# ------------------------------------------------------------
+
 if product_code:
 
     search_df = search_df[
@@ -832,6 +1073,10 @@ if product_code:
         )
     ]
 
+
+# ------------------------------------------------------------
+# 商品名
+# ------------------------------------------------------------
 
 if product_name:
 
@@ -851,10 +1096,44 @@ search_df = search_df.reset_index(
 
 
 # ============================================================
-# 結果
+# 再検索・リセット
 # ============================================================
 
 st.divider()
+
+
+button_col1, button_col2 = st.columns(
+    2
+)
+
+
+with button_col1:
+
+    if st.button(
+        "↩ 条件を残して再度検索条件を指定する",
+        width="stretch"
+    ):
+
+        st.session_state["searched"] = False
+
+        st.rerun()
+
+
+with button_col2:
+
+    if st.button(
+        "🔄 検索条件をすべてリセット",
+        width="stretch"
+    ):
+
+        reset_search_conditions()
+
+        st.rerun()
+
+
+# ============================================================
+# 結果
+# ============================================================
 
 st.subheader(
     "検索結果"
@@ -957,6 +1236,7 @@ with col_c:
 
 buffer = BytesIO()
 
+
 with pd.ExcelWriter(
     buffer,
     engine="openpyxl"
@@ -976,7 +1256,8 @@ st.download_button(
     mime=(
         "application/vnd.openxmlformats-officedocument."
         "spreadsheetml.sheet"
-    )
+    ),
+    width="stretch"
 )
 
 
@@ -1004,13 +1285,24 @@ if total_pages > 1:
         "ページ",
         min_value=1,
         max_value=total_pages,
-        value=1,
+        value=min(
+            st.session_state.get(
+                "page",
+                1
+            ),
+            total_pages
+        ),
         step=1
     )
 
 else:
 
     page = 1
+
+
+st.session_state["page"] = int(
+    page
+)
 
 
 start_index = (
