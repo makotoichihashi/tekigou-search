@@ -20,6 +20,11 @@ DB_PATH = os.path.join(
     "master_database.xlsx"
 )
 
+CAR_MASTER_PATH = os.path.join(
+    BASE_DIR,
+    "car_name_master_final.xlsx"
+)
+
 PAGE_SIZE = 50
 
 
@@ -31,7 +36,7 @@ st.set_page_config(
 
 
 # ============================================================
-# スマホ・タブレット表示調整
+# スマホ・タブレット対応
 # ============================================================
 
 st.markdown(
@@ -39,16 +44,12 @@ st.markdown(
     <style>
 
     .block-container {
-        padding-top: 1.5rem;
+        padding-top: 1.4rem;
         padding-bottom: 3rem;
         max-width: 1500px;
     }
 
-    .stButton > button {
-        min-height: 44px;
-        font-weight: 600;
-    }
-
+    .stButton > button,
     .stDownloadButton > button {
         min-height: 44px;
         font-weight: 600;
@@ -62,33 +63,29 @@ st.markdown(
     @media (max-width: 768px) {
 
         .block-container {
-            padding-top: 0.8rem;
+            padding-top: 0.7rem;
             padding-left: 0.7rem;
             padding-right: 0.7rem;
         }
 
         h1 {
-            font-size: 1.7rem !important;
+            font-size: 1.65rem !important;
         }
 
         h2 {
-            font-size: 1.35rem !important;
+            font-size: 1.30rem !important;
         }
 
         h3 {
-            font-size: 1.15rem !important;
+            font-size: 1.12rem !important;
         }
 
-        .stButton > button {
-            min-height: 48px;
-            font-size: 1rem;
-        }
-
+        .stButton > button,
         .stDownloadButton > button {
             min-height: 48px;
+            font-size: 1rem;
             width: 100%;
         }
-
     }
 
     </style>
@@ -98,7 +95,7 @@ st.markdown(
 
 
 # ============================================================
-# 文字整理
+# 共通文字処理
 # ============================================================
 
 def clean_text(value):
@@ -141,12 +138,46 @@ def normalize_search(value):
 
 
 # ============================================================
-# 年式表記の正規化
+# 車種名比較用正規化
+# ============================================================
+
+def normalize_car_key(value):
+
+    text = clean_text(
+        value
+    )
+
+    if not text:
+        return ""
+
+    text = unicodedata.normalize(
+        "NFKC",
+        text
+    )
+
+    text = text.lower()
+
+    text = text.replace(" ", "")
+    text = text.replace("　", "")
+
+    text = (
+        text
+        .replace("‐", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("−", "-")
+        .replace("：", ":")
+        .replace("／", "/")
+    )
+
+    return text
+
+
+# ============================================================
+# 年式正規化
 #
 # H03/05 → H3/5
 # R08/02 → R8/2
-# 03年 → 3年
-# 03月 → 3月
 # ============================================================
 
 def normalize_year_text(value):
@@ -163,19 +194,17 @@ def normalize_year_text(value):
         text
     )
 
-    # 範囲記号統一
     text = text.replace("〜", "～")
     text = text.replace("~", "～")
     text = text.replace("－", "～")
     text = text.replace("―", "～")
     text = text.replace("−", "～")
 
-    # 元号統一
     text = text.replace("令和", "R")
     text = text.replace("平成", "H")
     text = text.replace("昭和", "S")
 
-    # H03 → H3 / R08 → R8
+
     def era_replace(match):
 
         era = match.group(1).upper()
@@ -189,6 +218,7 @@ def normalize_year_text(value):
 
         return f"{era}{year}"
 
+
     text = re.sub(
         r"([RHS])0*(\d{1,2})",
         era_replace,
@@ -196,21 +226,18 @@ def normalize_year_text(value):
         flags=re.IGNORECASE
     )
 
-    # /03 → /3
     text = re.sub(
         r"/0+(\d+)",
         r"/\1",
         text
     )
 
-    # 03年 → 3年
     text = re.sub(
         r"(?<!\d)0+(\d+)年",
         r"\1年",
         text
     )
 
-    # 03月 → 3月
     text = re.sub(
         r"(?<!\d)0+(\d+)月",
         r"\1月",
@@ -230,9 +257,7 @@ def japanese_year_to_ad(
 ):
 
     try:
-        year = int(
-            year
-        )
+        year = int(year)
     except:
         return None
 
@@ -253,7 +278,7 @@ def japanese_year_to_ad(
 
 
 # ============================================================
-# 入力年式 → 西暦
+# 手入力年式
 # ============================================================
 
 def convert_year_input(value):
@@ -270,65 +295,47 @@ def convert_year_input(value):
     if not text:
         return None
 
-    # 西暦
     if re.fullmatch(
         r"\d{4}",
         text
     ):
-        return int(
-            text
-        )
+        return int(text)
 
-    # 令和
     match = re.fullmatch(
         r"R\s*0*(\d+)",
         text
     )
 
     if match:
-        return (
-            2018
-            +
-            int(
-                match.group(1)
-            )
+        return 2018 + int(
+            match.group(1)
         )
 
-    # 平成
     match = re.fullmatch(
         r"H\s*0*(\d+)",
         text
     )
 
     if match:
-        return (
-            1988
-            +
-            int(
-                match.group(1)
-            )
+        return 1988 + int(
+            match.group(1)
         )
 
-    # 昭和
     match = re.fullmatch(
         r"S\s*0*(\d+)",
         text
     )
 
     if match:
-        return (
-            1925
-            +
-            int(
-                match.group(1)
-            )
+        return 1925 + int(
+            match.group(1)
         )
 
     return None
 
 
 # ============================================================
-# 年式原文解析
+# 年式範囲解析
 # ============================================================
 
 def parse_year_range_from_text(value):
@@ -356,7 +363,6 @@ def parse_year_range_from_text(value):
         )
 
         if ad_year is not None:
-
             years.append(
                 ad_year
             )
@@ -366,7 +372,6 @@ def parse_year_range_from_text(value):
         start_year = years[0]
 
         if len(years) >= 2:
-
             end_year = years[-1]
 
         elif (
@@ -374,17 +379,16 @@ def parse_year_range_from_text(value):
             and
             text.rstrip().endswith("～")
         ):
-
             end_year = 9999
 
         else:
-
             end_year = start_year
 
         return (
             start_year,
             end_year
         )
+
 
     western_years = re.findall(
         r"(?<!\d)(19\d{2}|20\d{2})(?!\d)",
@@ -393,27 +397,24 @@ def parse_year_range_from_text(value):
 
     if western_years:
 
-        western_years = [
+        years = [
             int(x)
             for x in western_years
         ]
 
-        start_year = western_years[0]
+        start_year = years[0]
 
-        if len(western_years) >= 2:
-
-            end_year = western_years[-1]
+        if len(years) >= 2:
+            end_year = years[-1]
 
         elif (
             "～" in text
             and
             text.rstrip().endswith("～")
         ):
-
             end_year = 9999
 
         else:
-
             end_year = start_year
 
         return (
@@ -425,26 +426,209 @@ def parse_year_range_from_text(value):
 
 
 # ============================================================
-# DB読込
+# Excel読込
+#
+# mtimeを引数にすることで
+# Excel差し替え時にキャッシュを更新
 # ============================================================
 
 @st.cache_data
-def load_database():
+def load_main_database(
+    path,
+    file_mtime
+):
 
     try:
-
         df = pd.read_excel(
-            DB_PATH,
+            path,
             sheet_name="master"
         )
 
     except:
-
         df = pd.read_excel(
-            DB_PATH
+            path
         )
 
     return df.fillna("")
+
+
+@st.cache_data
+def load_car_master(
+    path,
+    file_mtime
+):
+
+    df = pd.read_excel(
+        path,
+        sheet_name="車種名統合"
+    )
+
+    return df.fillna("")
+
+
+# ============================================================
+# ファイル確認
+# ============================================================
+
+if not os.path.exists(
+    DB_PATH
+):
+
+    st.error(
+        "master_database.xlsx が見つかりません。"
+    )
+
+    st.stop()
+
+
+if not os.path.exists(
+    CAR_MASTER_PATH
+):
+
+    st.error(
+        "car_name_master_final.xlsx が見つかりません。"
+    )
+
+    st.write(
+        "GitHubで app.py と同じ場所に "
+        "car_name_master_final.xlsx をアップロードしてください。"
+    )
+
+    st.stop()
+
+
+# ============================================================
+# DB読込
+# ============================================================
+
+df = load_main_database(
+    DB_PATH,
+    os.path.getmtime(
+        DB_PATH
+    )
+)
+
+
+car_master_df = load_car_master(
+    CAR_MASTER_PATH,
+    os.path.getmtime(
+        CAR_MASTER_PATH
+    )
+)
+
+
+# ============================================================
+# 車種統合マスター辞書作成
+#
+# キー：
+# メーカー + 元車種名
+# ============================================================
+
+CAR_NAME_LOOKUP = {}
+
+
+for _, row in car_master_df.iterrows():
+
+    enabled = clean_text(
+        row.get(
+            "有効",
+            "YES"
+        )
+    ).upper()
+
+    if enabled not in [
+        "",
+        "YES",
+        "Y",
+        "TRUE",
+        "1"
+    ]:
+        continue
+
+
+    maker = clean_text(
+        row.get(
+            "メーカー",
+            ""
+        )
+    )
+
+    original_name = clean_text(
+        row.get(
+            "元車種名",
+            ""
+        )
+    )
+
+    merged_name = clean_text(
+        row.get(
+            "統合車種名",
+            ""
+        )
+    )
+
+
+    if (
+        not maker
+        or
+        not original_name
+        or
+        not merged_name
+    ):
+        continue
+
+
+    lookup_key = (
+        normalize_search(
+            maker
+        ),
+        normalize_car_key(
+            original_name
+        )
+    )
+
+
+    CAR_NAME_LOOKUP[
+        lookup_key
+    ] = merged_name
+
+
+# ============================================================
+# 車種名統合
+# ============================================================
+
+def get_merged_car_name(
+    maker,
+    car_name
+):
+
+    maker = clean_text(
+        maker
+    )
+
+    car_name = clean_text(
+        car_name
+    )
+
+    if not car_name:
+        return ""
+
+    key = (
+        normalize_search(
+            maker
+        ),
+        normalize_car_key(
+            car_name
+        )
+    )
+
+    if key in CAR_NAME_LOOKUP:
+        return CAR_NAME_LOOKUP[
+            key
+        ]
+
+    # マスターに存在しない車種は元名称
+    return car_name
 
 
 # ============================================================
@@ -485,17 +669,17 @@ def contains_value(
 
 
 # ============================================================
-# 年式フィルター
+# 年式検索
 # ============================================================
 
 def filter_by_year(
-    df,
+    target_df,
     target_year
 ):
 
     if target_year is None:
+        return target_df
 
-        return df
 
     def check_row(row):
 
@@ -513,39 +697,26 @@ def filter_by_year(
             )
         )
 
+
         try:
-
             start_year = (
-                int(
-                    float(
-                        start_year
-                    )
-                )
+                int(float(start_year))
                 if start_year
-                else
-                None
+                else None
             )
-
         except:
-
             start_year = None
 
+
         try:
-
             end_year = (
-                int(
-                    float(
-                        end_year
-                    )
-                )
+                int(float(end_year))
                 if end_year
-                else
-                None
+                else None
             )
-
         except:
-
             end_year = None
+
 
         if (
             start_year is not None
@@ -556,12 +727,12 @@ def filter_by_year(
             and
             1900 <= end_year <= 2200
         ):
-
             return (
                 start_year
                 <= target_year
                 <= end_year
             )
+
 
         if (
             start_year is not None
@@ -570,11 +741,11 @@ def filter_by_year(
             and
             1900 <= start_year <= 2200
         ):
-
             return (
                 target_year
                 >= start_year
             )
+
 
         year_text = clean_text(
             row.get(
@@ -592,86 +763,40 @@ def filter_by_year(
                 )
             )
 
-        parsed_start, parsed_end = (
+
+        start, end = (
             parse_year_range_from_text(
                 year_text
             )
         )
 
-        if (
-            parsed_start is not None
-            and
-            parsed_end is not None
-        ):
 
+        if (
+            start is not None
+            and
+            end is not None
+        ):
             return (
-                parsed_start
+                start
                 <= target_year
-                <= parsed_end
+                <= end
             )
 
         return False
 
-    mask = df.apply(
+
+    mask = target_df.apply(
         check_row,
         axis=1
     )
 
-    return df[
+    return target_df[
         mask
     ]
 
 
 # ============================================================
-# Pioneer情報精度
-# ============================================================
-
-def get_quality(row):
-
-    maker = clean_text(
-        row.get(
-            "商品メーカー",
-            ""
-        )
-    )
-
-    data_type = clean_text(
-        row.get(
-            "データ種別",
-            ""
-        )
-    )
-
-    if maker != "Pioneer":
-
-        return ""
-
-    if data_type.lower() == "gtable":
-
-        return (
-            "Pioneer公式商品別適合"
-        )
-
-    if data_type.upper() == "PDF":
-
-        return (
-            "Pioneer公式資料掲載情報"
-        )
-
-    return (
-        "Pioneer公式情報"
-    )
-
-
-# ============================================================
-# 適合状態の最終判定
-#
-# Pioneer:
-# gtable → DB判定を使用
-# PDF    → 必ず要確認
-#
-# ALPINE / KENWOOD:
-# DB判定を使用
+# Pioneer 最終適合判定
 # ============================================================
 
 def get_final_fitment(row):
@@ -697,59 +822,72 @@ def get_final_fitment(row):
         )
     )
 
-    # --------------------------------------------------------
-    # Pioneer
-    # --------------------------------------------------------
 
     if maker == "Pioneer":
 
-        # gtableは公式商品別適合
-        if data_type.lower() == "gtable":
+        data_type_lower = (
+            data_type.lower()
+        )
+
+
+        # JUST FIT商品別
+        if data_type_lower == "gtable":
 
             if raw_fitment in [
                 "適合",
                 "不適合",
                 "要確認"
             ]:
-
                 return raw_fitment
 
             return "要確認"
 
-        # PDFは資料掲載情報なので適合断定しない
-        if data_type.upper() == "PDF":
+
+        # 車種別カーナビセレクト
+        if data_type_lower == "select":
+
+            if raw_fitment in [
+                "適合",
+                "不適合",
+                "要確認"
+            ]:
+                return raw_fitment
 
             return "要確認"
 
+
+        # PDF掲載は断定しない
+        if data_type.upper() == "PDF":
+            return "要確認"
+
+
+        # 業務用補完
+        if data_type_lower == "business補完":
+            return "要確認"
+
+
         return "要確認"
 
-    # --------------------------------------------------------
-    # ALPINE / KENWOOD
-    # --------------------------------------------------------
 
     if raw_fitment:
-
         return raw_fitment
 
     return "要確認"
 
 
 # ============================================================
-# セッション初期化
+# セッション
 # ============================================================
 
 if "searched" not in st.session_state:
-
     st.session_state.searched = False
 
-
 if "page" not in st.session_state:
-
     st.session_state.page = 1
 
 
 # ============================================================
-# 条件リセット
+# リセット
 # ============================================================
 
 def reset_conditions():
@@ -773,31 +911,12 @@ def reset_conditions():
     for key in keys:
 
         if key in st.session_state:
-
             del st.session_state[
                 key
             ]
 
     st.session_state.searched = False
     st.session_state.page = 1
-
-
-# ============================================================
-# DB確認
-# ============================================================
-
-if not os.path.exists(
-    DB_PATH
-):
-
-    st.error(
-        "master_database.xlsx が見つかりません。"
-    )
-
-    st.stop()
-
-
-df = load_database()
 
 
 # ============================================================
@@ -809,7 +928,8 @@ st.title(
 )
 
 st.caption(
-    f"登録データ：{len(df):,}件"
+    f"登録データ：{len(df):,}件　"
+    f"｜ 車種統合ルール：{len(CAR_NAME_LOOKUP):,}件"
 )
 
 st.write(
@@ -818,7 +938,7 @@ st.write(
 
 
 # ============================================================
-# ① 車両を選択
+# ① 車両
 # ============================================================
 
 st.subheader(
@@ -834,7 +954,7 @@ vehicle_col1, vehicle_col2, vehicle_col3 = (
 
 
 # ============================================================
-# 車両メーカー
+# メーカー
 # ============================================================
 
 makers = sorted(
@@ -863,7 +983,7 @@ with vehicle_col1:
 
 
 # ============================================================
-# メーカー → 車種
+# メーカー絞込
 # ============================================================
 
 car_source_df = df.copy()
@@ -882,15 +1002,44 @@ if selected_maker != "指定なし":
     ]
 
 
-cars = sorted(
+# ============================================================
+# 車種候補
+#
+# ここでExcel統合マスターを適用
+# ============================================================
+
+merged_car_names = []
+
+
+for _, row in car_source_df[
     [
-        clean_text(x)
-        for x in
-        car_source_df[
-            "車種"
-        ].unique()
-        if clean_text(x)
+        "メーカー",
+        "車種"
     ]
+].drop_duplicates().iterrows():
+
+    merged_name = get_merged_car_name(
+        row[
+            "メーカー"
+        ],
+        row[
+            "車種"
+        ]
+    )
+
+    if merged_name:
+
+        merged_car_names.append(
+            merged_name
+        )
+
+
+cars = sorted(
+    list(
+        dict.fromkeys(
+            merged_car_names
+        )
+    )
 )
 
 
@@ -908,7 +1057,7 @@ with vehicle_col2:
 
 
 # ============================================================
-# 車種 → 年式
+# 選択車種に属する元データ抽出
 # ============================================================
 
 year_source_df = car_source_df.copy()
@@ -916,16 +1065,31 @@ year_source_df = car_source_df.copy()
 
 if selected_car != "指定なし":
 
-    year_source_df = year_source_df[
-        year_source_df[
-            "車種"
-        ].map(
-            clean_text
+    car_mask = year_source_df.apply(
+        lambda row:
+        get_merged_car_name(
+            row.get(
+                "メーカー",
+                ""
+            ),
+            row.get(
+                "車種",
+                ""
+            )
         )
         ==
-        selected_car
+        selected_car,
+        axis=1
+    )
+
+    year_source_df = year_source_df[
+        car_mask
     ]
 
+
+# ============================================================
+# 年式候補
+# ============================================================
 
 year_candidates = []
 
@@ -996,10 +1160,6 @@ row1_col1, row1_col2, row1_col3 = (
 )
 
 
-# ============================================================
-# 年式手入力
-# ============================================================
-
 with row1_col1:
 
     year_input = st.text_input(
@@ -1009,36 +1169,37 @@ with row1_col1:
     )
 
 
-# ============================================================
-# 型式
-# ============================================================
-
 with row1_col2:
 
     model_keyword = st.text_input(
         "型式",
-        placeholder="例：TRH200V",
+        placeholder="例：ZN8 / TRH200V",
         key="model_keyword"
     )
 
 
-# ============================================================
-# 商品メーカー
-# ============================================================
-
 with row1_col3:
 
-    selected_product_maker = (
-        st.selectbox(
-            "商品メーカー",
-            [
-                "指定なし",
-                "Pioneer",
-                "ALPINE",
-                "KENWOOD"
-            ],
-            key="product_maker"
-        )
+    product_makers = sorted(
+        [
+            clean_text(x)
+            for x in
+            df[
+                "商品メーカー"
+            ].unique()
+            if clean_text(x)
+        ]
+    )
+
+
+    selected_product_maker = st.selectbox(
+        "商品メーカー",
+        [
+            "指定なし"
+        ]
+        +
+        product_makers,
+        key="product_maker"
     )
 
 
@@ -1051,17 +1212,15 @@ category_source_df = df.copy()
 
 if selected_product_maker != "指定なし":
 
-    category_source_df = (
+    category_source_df = category_source_df[
         category_source_df[
-            category_source_df[
-                "商品メーカー"
-            ].map(
-                clean_text
-            )
-            ==
-            selected_product_maker
-        ]
-    )
+            "商品メーカー"
+        ].map(
+            clean_text
+        )
+        ==
+        selected_product_maker
+    ]
 
 
 categories = sorted(
@@ -1100,7 +1259,7 @@ with row2_col2:
 
     product_code = st.text_input(
         "商品型番",
-        placeholder="例：AVIC-RF722",
+        placeholder="例：AVIC-RW822-D",
         key="product_code"
     )
 
@@ -1133,10 +1292,7 @@ with filter_col1:
     current_only = st.checkbox(
         "現行商品のみ表示",
         value=False,
-        key="current_only",
-        help=(
-            "生産状態が「現行」の商品だけを表示します。"
-        )
+        key="current_only"
     )
 
 
@@ -1145,15 +1301,12 @@ with filter_col2:
     fit_only = st.checkbox(
         "適合商品のみ表示",
         value=False,
-        key="fit_only",
-        help=(
-            "最終適合判定が「適合」の商品だけを表示します。"
-        )
+        key="fit_only"
     )
 
 
 # ============================================================
-# 検索
+# 検索ボタン
 # ============================================================
 
 if st.button(
@@ -1165,10 +1318,6 @@ if st.button(
     st.session_state.searched = True
     st.session_state.page = 1
 
-
-# ============================================================
-# 検索前
-# ============================================================
 
 if not st.session_state.searched:
 
@@ -1186,10 +1335,7 @@ if not st.session_state.searched:
 search_df = df.copy()
 
 
-# ------------------------------------------------------------
-# 車両メーカー
-# ------------------------------------------------------------
-
+# メーカー
 if selected_maker != "指定なし":
 
     search_df = search_df[
@@ -1203,31 +1349,35 @@ if selected_maker != "指定なし":
     ]
 
 
-# ------------------------------------------------------------
-# 車種
-# ------------------------------------------------------------
-
+# 車種統合マスター
 if selected_car != "指定なし":
 
-    search_df = search_df[
-        search_df[
-            "車種"
-        ].map(
-            clean_text
+    car_mask = search_df.apply(
+        lambda row:
+        get_merged_car_name(
+            row.get(
+                "メーカー",
+                ""
+            ),
+            row.get(
+                "車種",
+                ""
+            )
         )
         ==
-        selected_car
+        selected_car,
+        axis=1
+    )
+
+    search_df = search_df[
+        car_mask
     ]
 
 
-# ------------------------------------------------------------
-# 年式候補
-# 正規化して比較
-# ------------------------------------------------------------
-
+# 年式選択
 if selected_year_text != "指定なし":
 
-    normalized_selected_year = (
+    selected_normalized_year = (
         normalize_year_text(
             selected_year_text
         )
@@ -1237,6 +1387,7 @@ if selected_year_text != "指定なし":
         False,
         index=search_df.index
     )
+
 
     if "年式原文" in search_df.columns:
 
@@ -1248,9 +1399,10 @@ if selected_year_text != "指定なし":
             ].map(
                 normalize_year_text
             ).eq(
-                normalized_selected_year
+                selected_normalized_year
             )
         )
+
 
     if "年式" in search_df.columns:
 
@@ -1262,19 +1414,17 @@ if selected_year_text != "指定なし":
             ].map(
                 normalize_year_text
             ).eq(
-                normalized_selected_year
+                selected_normalized_year
             )
         )
+
 
     search_df = search_df[
         year_mask
     ]
 
 
-# ------------------------------------------------------------
-# 年式手入力
-# ------------------------------------------------------------
-
+# 年式直接入力
 if year_input:
 
     target_year = convert_year_input(
@@ -1295,16 +1445,14 @@ if year_input:
         )
 
 
-# ------------------------------------------------------------
 # 型式
-# ------------------------------------------------------------
-
 if model_keyword:
 
     model_mask = pd.Series(
         False,
         index=search_df.index
     )
+
 
     if "実型式" in search_df.columns:
 
@@ -1319,6 +1467,7 @@ if model_keyword:
             )
         )
 
+
     if "型式" in search_df.columns:
 
         model_mask = (
@@ -1332,15 +1481,13 @@ if model_keyword:
             )
         )
 
+
     search_df = search_df[
         model_mask
     ]
 
 
-# ------------------------------------------------------------
 # 商品メーカー
-# ------------------------------------------------------------
-
 if selected_product_maker != "指定なし":
 
     search_df = search_df[
@@ -1354,10 +1501,7 @@ if selected_product_maker != "指定なし":
     ]
 
 
-# ------------------------------------------------------------
 # カテゴリ
-# ------------------------------------------------------------
-
 if selected_category != "指定なし":
 
     search_df = search_df[
@@ -1371,10 +1515,7 @@ if selected_category != "指定なし":
     ]
 
 
-# ------------------------------------------------------------
-# 商品型番
-# ------------------------------------------------------------
-
+# 型番
 if product_code:
 
     search_df = search_df[
@@ -1387,10 +1528,7 @@ if product_code:
     ]
 
 
-# ------------------------------------------------------------
 # 商品名
-# ------------------------------------------------------------
-
 if product_name:
 
     search_df = search_df[
@@ -1403,10 +1541,7 @@ if product_name:
     ]
 
 
-# ------------------------------------------------------------
 # 現行商品のみ
-# ------------------------------------------------------------
-
 if current_only:
 
     if "生産状態" in search_df.columns:
@@ -1422,11 +1557,7 @@ if current_only:
         ]
 
 
-# ------------------------------------------------------------
-# 適合商品のみ
-# Pioneer PDFはここで除外される
-# ------------------------------------------------------------
-
+# 適合のみ
 if fit_only:
 
     fit_mask = search_df.apply(
@@ -1486,7 +1617,7 @@ with retry_col2:
 
 
 # ============================================================
-# ③ 検索結果
+# ③ 結果
 # ============================================================
 
 st.subheader(
@@ -1494,10 +1625,97 @@ st.subheader(
 )
 
 
-st.metric(
-    "該当件数",
-    f"{len(search_df):,} 件"
+# ============================================================
+# 適合状態集計
+# ============================================================
+
+result_summary = search_df.copy()
+
+
+if not result_summary.empty:
+
+    result_summary[
+        "最終適合状態"
+    ] = result_summary.apply(
+        get_final_fitment,
+        axis=1
+    )
+
+
+    fit_count = int(
+        (
+            result_summary[
+                "最終適合状態"
+            ]
+            ==
+            "適合"
+        ).sum()
+    )
+
+
+    check_count = int(
+        (
+            result_summary[
+                "最終適合状態"
+            ]
+            ==
+            "要確認"
+        ).sum()
+    )
+
+
+    ng_count = int(
+        (
+            result_summary[
+                "最終適合状態"
+            ]
+            ==
+            "不適合"
+        ).sum()
+    )
+
+else:
+
+    fit_count = 0
+    check_count = 0
+    ng_count = 0
+
+
+metric1, metric2, metric3, metric4 = st.columns(
+    4
 )
+
+
+with metric1:
+
+    st.metric(
+        "該当件数",
+        f"{len(search_df):,}"
+    )
+
+
+with metric2:
+
+    st.metric(
+        "✅ 適合",
+        f"{fit_count:,}"
+    )
+
+
+with metric3:
+
+    st.metric(
+        "⚠️ 要確認",
+        f"{check_count:,}"
+    )
+
+
+with metric4:
+
+    st.metric(
+        "❌ 不適合",
+        f"{ng_count:,}"
+    )
 
 
 if search_df.empty:
@@ -1510,88 +1728,36 @@ if search_df.empty:
 
 
 # ============================================================
-# 集計
-# 最終適合判定を使用
+# 検索条件表示
 # ============================================================
 
-summary_df = search_df.copy()
-
-summary_df[
-    "最終適合状態"
-] = summary_df.apply(
-    get_final_fitment,
-    axis=1
-)
-
-
-summary1, summary2, summary3 = st.columns(
-    3
-)
-
-
-with summary1:
+with st.expander(
+    "今回の検索条件"
+):
 
     st.write(
-        "#### 商品メーカー"
+        "**車両メーカー：**",
+        selected_maker
     )
-
-    st.dataframe(
-        summary_df[
-            "商品メーカー"
-        ]
-        .value_counts()
-        .rename_axis(
-            "メーカー"
-        )
-        .reset_index(
-            name="件数"
-        ),
-        hide_index=True,
-        width="stretch"
-    )
-
-
-with summary2:
 
     st.write(
-        "#### カテゴリ"
+        "**統合車種名：**",
+        selected_car
     )
-
-    st.dataframe(
-        summary_df[
-            "カテゴリ"
-        ]
-        .value_counts()
-        .rename_axis(
-            "カテゴリ"
-        )
-        .reset_index(
-            name="件数"
-        ),
-        hide_index=True,
-        width="stretch"
-    )
-
-
-with summary3:
 
     st.write(
-        "#### 適合状態"
+        "**年式：**",
+        selected_year_text
     )
 
-    st.dataframe(
-        summary_df[
-            "最終適合状態"
-        ]
-        .value_counts()
-        .rename_axis(
-            "状態"
-        )
-        .reset_index(
-            name="件数"
-        ),
-        hide_index=True,
-        width="stretch"
+    st.write(
+        "**商品メーカー：**",
+        selected_product_maker
+    )
+
+    st.write(
+        "**カテゴリ：**",
+        selected_category
     )
 
 
@@ -1601,10 +1767,29 @@ with summary3:
 
 download_df = search_df.copy()
 
+
 download_df[
     "最終適合状態"
 ] = download_df.apply(
     get_final_fitment,
+    axis=1
+)
+
+
+download_df[
+    "統合車種名"
+] = download_df.apply(
+    lambda row:
+    get_merged_car_name(
+        row.get(
+            "メーカー",
+            ""
+        ),
+        row.get(
+            "車種",
+            ""
+        )
+    ),
     axis=1
 )
 
@@ -1702,7 +1887,7 @@ st.write(
 
 
 # ============================================================
-# 結果詳細
+# 詳細
 # ============================================================
 
 for _, row in page_df.iterrows():
@@ -1757,31 +1942,55 @@ for _, row in page_df.iterrows():
         )
 
 
-        # ====================================================
-        # 車両情報
-        # ====================================================
+        # ----------------------------------------------------
+        # 車両
+        # ----------------------------------------------------
 
         with left:
 
-            st.write(
-                "**車両メーカー：**",
-                clean_text(
-                    row.get(
-                        "メーカー",
-                        ""
-                    )
+            vehicle_maker = clean_text(
+                row.get(
+                    "メーカー",
+                    ""
                 )
             )
 
-            st.write(
-                "**車種：**",
-                clean_text(
-                    row.get(
-                        "車種",
-                        ""
-                    )
+            original_car_name = clean_text(
+                row.get(
+                    "車種",
+                    ""
                 )
             )
+
+            merged_car_name = get_merged_car_name(
+                vehicle_maker,
+                original_car_name
+            )
+
+
+            st.write(
+                "**車両メーカー：**",
+                vehicle_maker
+            )
+
+
+            st.write(
+                "**車種：**",
+                original_car_name
+            )
+
+
+            # 元データと統合名が違う時だけ表示
+            if (
+                merged_car_name
+                !=
+                original_car_name
+            ):
+
+                st.caption(
+                    f"統合検索車種：{merged_car_name}"
+                )
+
 
             vehicle_type = clean_text(
                 row.get(
@@ -1790,6 +1999,7 @@ for _, row in page_df.iterrows():
                 )
             )
 
+
             if vehicle_type:
 
                 st.write(
@@ -1797,12 +2007,14 @@ for _, row in page_df.iterrows():
                     vehicle_type
                 )
 
+
             year = clean_text(
                 row.get(
                     "年式原文",
                     ""
                 )
             )
+
 
             if not year:
 
@@ -1813,6 +2025,7 @@ for _, row in page_df.iterrows():
                     )
                 )
 
+
             if year:
 
                 st.write(
@@ -1822,12 +2035,14 @@ for _, row in page_df.iterrows():
                     )
                 )
 
+
             model = clean_text(
                 row.get(
                     "実型式",
                     ""
                 )
             )
+
 
             if not model:
 
@@ -1838,6 +2053,7 @@ for _, row in page_df.iterrows():
                     )
                 )
 
+
             if model:
 
                 st.write(
@@ -1846,9 +2062,9 @@ for _, row in page_df.iterrows():
                 )
 
 
-        # ====================================================
-        # 商品情報
-        # ====================================================
+        # ----------------------------------------------------
+        # 商品
+        # ----------------------------------------------------
 
         with right:
 
@@ -1862,12 +2078,14 @@ for _, row in page_df.iterrows():
                 category
             )
 
+
             if name:
 
                 st.write(
                     "**商品名：**",
                     name
                 )
+
 
             if code:
 
@@ -1876,12 +2094,14 @@ for _, row in page_df.iterrows():
                     code
                 )
 
+
             production = clean_text(
                 row.get(
                     "生産状態",
                     ""
                 )
             )
+
 
             if production:
 
@@ -1891,9 +2111,9 @@ for _, row in page_df.iterrows():
                 )
 
 
-        # ====================================================
-        # 適合状態を色分け
-        # ====================================================
+        # ----------------------------------------------------
+        # 適合
+        # ----------------------------------------------------
 
         if fitment == "適合":
 
@@ -1901,36 +2121,22 @@ for _, row in page_df.iterrows():
                 "✅ 適合"
             )
 
-
         elif fitment == "不適合":
 
             st.error(
                 "❌ 不適合"
             )
 
-
-        elif fitment == "要確認":
+        else:
 
             st.warning(
                 "⚠️ 要確認"
             )
 
 
-        else:
-
-            st.write(
-                "**適合状態：**",
-                fitment
-            )
-
-
-        # ====================================================
-        # Pioneer情報精度
-        # ====================================================
-
-        quality = get_quality(
-            row
-        )
+        # ----------------------------------------------------
+        # Pioneer根拠
+        # ----------------------------------------------------
 
         data_type = clean_text(
             row.get(
@@ -1942,30 +2148,63 @@ for _, row in page_df.iterrows():
 
         if maker == "Pioneer":
 
-            if data_type.upper() == "PDF":
+            data_type_lower = (
+                data_type.lower()
+            )
+
+
+            if data_type_lower == "select":
+
+                st.info(
+                    "Pioneer公式「車種別カーナビセレクト」に"
+                    "基づく判定です。"
+                )
+
+
+            elif data_type_lower == "gtable":
+
+                st.info(
+                    "Pioneer公式の商品別適合情報"
+                    "（gtable）に基づく判定です。"
+                )
+
+
+            elif data_type.upper() == "PDF":
 
                 st.warning(
-                    "Pioneer公式取付資料に商品型番が掲載されています。"
-                    "ただし、PDF掲載のみでは商品別の適合可否を断定できないため、"
-                    "このシステムでは「要確認」としています。"
-                )
-
-            elif data_type.lower() == "gtable":
-
-                st.info(
-                    "Pioneer公式の商品別適合情報（gtable）に基づく判定です。"
-                )
-
-            elif quality:
-
-                st.info(
-                    quality
+                    "Pioneer公式取付資料への掲載情報です。"
+                    "商品型番単位の直接適合が確認できないため"
+                    "「要確認」としています。"
                 )
 
 
-        # ====================================================
+            elif data_type_lower == "business補完":
+
+                source_model = clean_text(
+                    row.get(
+                        "補完元商品型番",
+                        ""
+                    )
+                )
+
+                if source_model:
+
+                    st.info(
+                        f"{source_model} のPioneer公式適合情報を"
+                        "参照して生成した業務用モデル候補です。"
+                    )
+
+                else:
+
+                    st.info(
+                        "Pioneer公式適合情報を参照して生成した"
+                        "業務用モデル候補です。"
+                    )
+
+
+        # ----------------------------------------------------
         # 取付キット
-        # ====================================================
+        # ----------------------------------------------------
 
         kit = clean_text(
             row.get(
@@ -1973,6 +2212,7 @@ for _, row in page_df.iterrows():
                 ""
             )
         )
+
 
         if kit:
 
@@ -1982,9 +2222,9 @@ for _, row in page_df.iterrows():
             )
 
 
-        # ====================================================
+        # ----------------------------------------------------
         # 関連品番
-        # ====================================================
+        # ----------------------------------------------------
 
         related = clean_text(
             row.get(
@@ -1992,6 +2232,7 @@ for _, row in page_df.iterrows():
                 ""
             )
         )
+
 
         if related:
 
@@ -2001,9 +2242,9 @@ for _, row in page_df.iterrows():
             )
 
 
-        # ====================================================
-        # 注意事項強調
-        # ====================================================
+        # ----------------------------------------------------
+        # 注意事項
+        # ----------------------------------------------------
 
         reason = clean_text(
             row.get(
@@ -2026,11 +2267,13 @@ for _, row in page_df.iterrows():
                 "#### ⚠️ 適合条件・注意事項"
             )
 
+
             if reason:
 
                 st.warning(
                     reason
                 )
+
 
             if (
                 notes
@@ -2043,9 +2286,9 @@ for _, row in page_df.iterrows():
                 )
 
 
-        # ====================================================
+        # ----------------------------------------------------
         # URL
-        # ====================================================
+        # ----------------------------------------------------
 
         product_url = clean_text(
             row.get(
@@ -2054,12 +2297,14 @@ for _, row in page_df.iterrows():
             )
         )
 
+
         source_url = clean_text(
             row.get(
                 "商品適合URL",
                 ""
             )
         )
+
 
         if not source_url:
 
@@ -2070,6 +2315,7 @@ for _, row in page_df.iterrows():
                 )
             )
 
+
         if not source_url:
 
             source_url = clean_text(
@@ -2078,6 +2324,7 @@ for _, row in page_df.iterrows():
                     ""
                 )
             )
+
 
         pdf_url = clean_text(
             row.get(
