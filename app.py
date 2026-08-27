@@ -2,6 +2,7 @@ import os
 import re
 import unicodedata
 from io import BytesIO
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -36,7 +37,7 @@ st.set_page_config(
 
 
 # ============================================================
-# スマホ・タブレット対応
+# 表示調整
 # ============================================================
 
 st.markdown(
@@ -83,7 +84,6 @@ st.markdown(
         .stButton > button,
         .stDownloadButton > button {
             min-height: 48px;
-            font-size: 1rem;
             width: 100%;
         }
     }
@@ -95,7 +95,7 @@ st.markdown(
 
 
 # ============================================================
-# 共通文字処理
+# 文字整理
 # ============================================================
 
 def clean_text(value):
@@ -138,7 +138,7 @@ def normalize_search(value):
 
 
 # ============================================================
-# 車種名比較用正規化
+# 車種比較用
 # ============================================================
 
 def normalize_car_key(value):
@@ -149,11 +149,6 @@ def normalize_car_key(value):
 
     if not text:
         return ""
-
-    text = unicodedata.normalize(
-        "NFKC",
-        text
-    )
 
     text = text.lower()
 
@@ -171,80 +166,6 @@ def normalize_car_key(value):
     )
 
     return text
-
-
-# ============================================================
-# 年式正規化
-#
-# H03/05 → H3/5
-# R08/02 → R8/2
-# ============================================================
-
-def normalize_year_text(value):
-
-    text = clean_text(
-        value
-    )
-
-    if not text:
-        return ""
-
-    text = unicodedata.normalize(
-        "NFKC",
-        text
-    )
-
-    text = text.replace("〜", "～")
-    text = text.replace("~", "～")
-    text = text.replace("－", "～")
-    text = text.replace("―", "～")
-    text = text.replace("−", "～")
-
-    text = text.replace("令和", "R")
-    text = text.replace("平成", "H")
-    text = text.replace("昭和", "S")
-
-
-    def era_replace(match):
-
-        era = match.group(1).upper()
-
-        try:
-            year = int(
-                match.group(2)
-            )
-        except:
-            return match.group(0)
-
-        return f"{era}{year}"
-
-
-    text = re.sub(
-        r"([RHS])0*(\d{1,2})",
-        era_replace,
-        text,
-        flags=re.IGNORECASE
-    )
-
-    text = re.sub(
-        r"/0+(\d+)",
-        r"/\1",
-        text
-    )
-
-    text = re.sub(
-        r"(?<!\d)0+(\d+)年",
-        r"\1年",
-        text
-    )
-
-    text = re.sub(
-        r"(?<!\d)0+(\d+)月",
-        r"\1月",
-        text
-    )
-
-    return text.strip()
 
 
 # ============================================================
@@ -278,67 +199,99 @@ def japanese_year_to_ad(
 
 
 # ============================================================
-# 手入力年式
+# 西暦 → 和暦
 # ============================================================
 
-def convert_year_input(value):
+def get_japanese_era_label(year):
+
+    year = int(year)
+
+    if year >= 2019:
+        return f"R{year - 2018}"
+
+    if year >= 1989:
+        return f"H{year - 1988}"
+
+    if year >= 1926:
+        return f"S{year - 1925}"
+
+    return ""
+
+
+def year_display_label(year):
+
+    era = get_japanese_era_label(
+        year
+    )
+
+    if era:
+        return f"{year}年（{era}）"
+
+    return f"{year}年"
+
+
+# ============================================================
+# 年月数値化
+#
+# 2022/12 → 202212
+# ============================================================
+
+def make_ym(
+    year,
+    month
+):
+
+    try:
+        year = int(year)
+        month = int(month)
+    except:
+        return None
+
+    if not 1 <= month <= 12:
+        return None
+
+    return year * 100 + month
+
+
+# ============================================================
+# 年式文字列正規化
+# ============================================================
+
+def normalize_year_text(value):
 
     text = clean_text(
         value
-    ).upper()
+    )
+
+    if not text:
+        return ""
+
+    text = text.replace("〜", "～")
+    text = text.replace("~", "～")
+    text = text.replace("－", "～")
+    text = text.replace("―", "～")
+    text = text.replace("−", "～")
 
     text = text.replace("令和", "R")
     text = text.replace("平成", "H")
     text = text.replace("昭和", "S")
-    text = text.replace("年", "")
 
-    if not text:
-        return None
-
-    if re.fullmatch(
-        r"\d{4}",
-        text
-    ):
-        return int(text)
-
-    match = re.fullmatch(
-        r"R\s*0*(\d+)",
-        text
-    )
-
-    if match:
-        return 2018 + int(
-            match.group(1)
-        )
-
-    match = re.fullmatch(
-        r"H\s*0*(\d+)",
-        text
-    )
-
-    if match:
-        return 1988 + int(
-            match.group(1)
-        )
-
-    match = re.fullmatch(
-        r"S\s*0*(\d+)",
-        text
-    )
-
-    if match:
-        return 1925 + int(
-            match.group(1)
-        )
-
-    return None
+    return text.strip()
 
 
 # ============================================================
-# 年式範囲解析
+# 年式原文 → 開始年月・終了年月
+#
+# 対応例
+#
+# H28/8～R4/11
+# R4/12～現在
+# 22年(R4)12月-現在
+# 15年(H27)2月-19年(R1)6月
+# H22/11～H27/7 S-HYBRIDを含む
 # ============================================================
 
-def parse_year_range_from_text(value):
+def parse_year_month_range(value):
 
     text = normalize_year_text(
         value
@@ -347,89 +300,243 @@ def parse_year_range_from_text(value):
     if not text:
         return None, None
 
-    era_matches = re.findall(
-        r"([RHS])\s*(\d{1,2})(?:\s*/\s*\d{1,2})?",
+
+    # --------------------------------------------------------
+    # 区切り記号を統一
+    # --------------------------------------------------------
+
+    text = text.replace("-", "～")
+
+
+    ym_values = []
+
+
+    # --------------------------------------------------------
+    # R4/12
+    # H28/8
+    # --------------------------------------------------------
+
+    era_slash_matches = re.findall(
+        r"([RHS])\s*0*(\d{1,2})\s*/\s*0*(\d{1,2})",
         text,
         flags=re.IGNORECASE
     )
 
-    years = []
 
-    for era, year in era_matches:
+    for era, year, month in era_slash_matches:
 
         ad_year = japanese_year_to_ad(
             era,
             year
         )
 
-        if ad_year is not None:
-            years.append(
-                ad_year
+        if ad_year is None:
+            continue
+
+        ym = make_ym(
+            ad_year,
+            month
+        )
+
+        if ym is not None:
+            ym_values.append(
+                ym
             )
 
-    if years:
 
-        start_year = years[0]
+    # --------------------------------------------------------
+    # 22年(R4)12月
+    # 15年(H27)2月
+    # --------------------------------------------------------
 
-        if len(years) >= 2:
-            end_year = years[-1]
+    if not ym_values:
 
-        elif (
-            "～" in text
-            and
-            text.rstrip().endswith("～")
-        ):
-            end_year = 9999
-
-        else:
-            end_year = start_year
-
-        return (
-            start_year,
-            end_year
+        era_parenthesis_matches = re.findall(
+            r"\(([RHS])\s*0*(\d{1,2})\)\s*0*(\d{1,2})月",
+            text,
+            flags=re.IGNORECASE
         )
 
 
-    western_years = re.findall(
-        r"(?<!\d)(19\d{2}|20\d{2})(?!\d)",
-        text
+        for era, year, month in era_parenthesis_matches:
+
+            ad_year = japanese_year_to_ad(
+                era,
+                year
+            )
+
+            if ad_year is None:
+                continue
+
+            ym = make_ym(
+                ad_year,
+                month
+            )
+
+            if ym is not None:
+                ym_values.append(
+                    ym
+                )
+
+
+    # --------------------------------------------------------
+    # 2022年12月 のような西暦表記
+    # --------------------------------------------------------
+
+    if not ym_values:
+
+        western_matches = re.findall(
+            r"(19\d{2}|20\d{2})年\s*0*(\d{1,2})月",
+            text
+        )
+
+
+        for year, month in western_matches:
+
+            ym = make_ym(
+                year,
+                month
+            )
+
+            if ym is not None:
+                ym_values.append(
+                    ym
+                )
+
+
+    # --------------------------------------------------------
+    # 年月が取れない場合
+    # --------------------------------------------------------
+
+    if not ym_values:
+        return None, None
+
+
+    start_ym = ym_values[0]
+
+
+    if len(ym_values) >= 2:
+
+        end_ym = ym_values[-1]
+
+
+    elif "現在" in text:
+
+        end_ym = 999912
+
+
+    elif (
+        "～" in text
+        and
+        text.rstrip().endswith("～")
+    ):
+
+        end_ym = 999912
+
+
+    else:
+
+        end_ym = start_ym
+
+
+    return (
+        start_ym,
+        end_ym
     )
 
-    if western_years:
 
-        years = [
-            int(x)
-            for x in western_years
-        ]
+# ============================================================
+# 年月検索
+# ============================================================
 
-        start_year = years[0]
+def filter_by_year_month(
+    target_df,
+    selected_year,
+    selected_month=None
+):
 
-        if len(years) >= 2:
-            end_year = years[-1]
+    if selected_year is None:
+        return target_df
 
-        elif (
-            "～" in text
-            and
-            text.rstrip().endswith("～")
-        ):
-            end_year = 9999
 
-        else:
-            end_year = start_year
+    if selected_month is not None:
 
-        return (
-            start_year,
-            end_year
+        search_start = make_ym(
+            selected_year,
+            selected_month
         )
 
-    return None, None
+        search_end = search_start
+
+
+    else:
+
+        search_start = make_ym(
+            selected_year,
+            1
+        )
+
+        search_end = make_ym(
+            selected_year,
+            12
+        )
+
+
+    def check_row(row):
+
+        year_text = clean_text(
+            row.get(
+                "年式原文",
+                ""
+            )
+        )
+
+
+        if not year_text:
+
+            year_text = clean_text(
+                row.get(
+                    "年式",
+                    ""
+                )
+            )
+
+
+        start_ym, end_ym = (
+            parse_year_month_range(
+                year_text
+            )
+        )
+
+
+        if (
+            start_ym is None
+            or
+            end_ym is None
+        ):
+            return False
+
+
+        return not (
+            end_ym < search_start
+            or
+            start_ym > search_end
+        )
+
+
+    mask = target_df.apply(
+        check_row,
+        axis=1
+    )
+
+
+    return target_df[
+        mask
+    ]
 
 
 # ============================================================
 # Excel読込
-#
-# mtimeを引数にすることで
-# Excel差し替え時にキャッシュを更新
 # ============================================================
 
 @st.cache_data
@@ -439,12 +546,14 @@ def load_main_database(
 ):
 
     try:
+
         df = pd.read_excel(
             path,
             sheet_name="master"
         )
 
     except:
+
         df = pd.read_excel(
             path
         )
@@ -489,11 +598,6 @@ if not os.path.exists(
         "car_name_master_final.xlsx が見つかりません。"
     )
 
-    st.write(
-        "GitHubで app.py と同じ場所に "
-        "car_name_master_final.xlsx をアップロードしてください。"
-    )
-
     st.stop()
 
 
@@ -518,10 +622,7 @@ car_master_df = load_car_master(
 
 
 # ============================================================
-# 車種統合マスター辞書作成
-#
-# キー：
-# メーカー + 元車種名
+# 車種統合辞書
 # ============================================================
 
 CAR_NAME_LOOKUP = {}
@@ -535,6 +636,7 @@ for _, row in car_master_df.iterrows():
             "YES"
         )
     ).upper()
+
 
     if enabled not in [
         "",
@@ -578,23 +680,20 @@ for _, row in car_master_df.iterrows():
         continue
 
 
-    lookup_key = (
-        normalize_search(
-            maker
-        ),
-        normalize_car_key(
-            original_name
-        )
-    )
-
-
     CAR_NAME_LOOKUP[
-        lookup_key
+        (
+            normalize_search(
+                maker
+            ),
+            normalize_car_key(
+                original_name
+            )
+        )
     ] = merged_name
 
 
 # ============================================================
-# 車種名統合
+# 統合車種名
 # ============================================================
 
 def get_merged_car_name(
@@ -610,8 +709,10 @@ def get_merged_car_name(
         car_name
     )
 
+
     if not car_name:
         return ""
+
 
     key = (
         normalize_search(
@@ -622,13 +723,11 @@ def get_merged_car_name(
         )
     )
 
-    if key in CAR_NAME_LOOKUP:
-        return CAR_NAME_LOOKUP[
-            key
-        ]
 
-    # マスターに存在しない車種は元名称
-    return car_name
+    return CAR_NAME_LOOKUP.get(
+        key,
+        car_name
+    )
 
 
 # ============================================================
@@ -644,12 +743,14 @@ def contains_value(
         keyword
     )
 
+
     if not keyword:
 
         return pd.Series(
             True,
             index=series.index
         )
+
 
     normalized = (
         series
@@ -660,6 +761,7 @@ def contains_value(
         )
     )
 
+
     return normalized.str.contains(
         re.escape(
             keyword
@@ -669,134 +771,7 @@ def contains_value(
 
 
 # ============================================================
-# 年式検索
-# ============================================================
-
-def filter_by_year(
-    target_df,
-    target_year
-):
-
-    if target_year is None:
-        return target_df
-
-
-    def check_row(row):
-
-        start_year = clean_text(
-            row.get(
-                "開始年",
-                ""
-            )
-        )
-
-        end_year = clean_text(
-            row.get(
-                "終了年",
-                ""
-            )
-        )
-
-
-        try:
-            start_year = (
-                int(float(start_year))
-                if start_year
-                else None
-            )
-        except:
-            start_year = None
-
-
-        try:
-            end_year = (
-                int(float(end_year))
-                if end_year
-                else None
-            )
-        except:
-            end_year = None
-
-
-        if (
-            start_year is not None
-            and
-            end_year is not None
-            and
-            1900 <= start_year <= 2200
-            and
-            1900 <= end_year <= 2200
-        ):
-            return (
-                start_year
-                <= target_year
-                <= end_year
-            )
-
-
-        if (
-            start_year is not None
-            and
-            end_year is None
-            and
-            1900 <= start_year <= 2200
-        ):
-            return (
-                target_year
-                >= start_year
-            )
-
-
-        year_text = clean_text(
-            row.get(
-                "年式原文",
-                ""
-            )
-        )
-
-        if not year_text:
-
-            year_text = clean_text(
-                row.get(
-                    "年式",
-                    ""
-                )
-            )
-
-
-        start, end = (
-            parse_year_range_from_text(
-                year_text
-            )
-        )
-
-
-        if (
-            start is not None
-            and
-            end is not None
-        ):
-            return (
-                start
-                <= target_year
-                <= end
-            )
-
-        return False
-
-
-    mask = target_df.apply(
-        check_row,
-        axis=1
-    )
-
-    return target_df[
-        mask
-    ]
-
-
-# ============================================================
-# Pioneer 最終適合判定
+# Pioneer最終判定
 # ============================================================
 
 def get_final_fitment(row):
@@ -830,8 +805,10 @@ def get_final_fitment(row):
         )
 
 
-        # JUST FIT商品別
-        if data_type_lower == "gtable":
+        if data_type_lower in [
+            "gtable",
+            "select"
+        ]:
 
             if raw_fitment in [
                 "適合",
@@ -843,25 +820,10 @@ def get_final_fitment(row):
             return "要確認"
 
 
-        # 車種別カーナビセレクト
-        if data_type_lower == "select":
-
-            if raw_fitment in [
-                "適合",
-                "不適合",
-                "要確認"
-            ]:
-                return raw_fitment
-
-            return "要確認"
-
-
-        # PDF掲載は断定しない
         if data_type.upper() == "PDF":
             return "要確認"
 
 
-        # 業務用補完
         if data_type_lower == "business補完":
             return "要確認"
 
@@ -871,6 +833,7 @@ def get_final_fitment(row):
 
     if raw_fitment:
         return raw_fitment
+
 
     return "要確認"
 
@@ -896,7 +859,7 @@ def reset_conditions():
         "vehicle_maker",
         "car_name",
         "year_select",
-        "year_input",
+        "month_select",
         "model_keyword",
         "product_maker",
         "category",
@@ -908,12 +871,14 @@ def reset_conditions():
         "searched",
     ]
 
+
     for key in keys:
 
         if key in st.session_state:
             del st.session_state[
                 key
             ]
+
 
     st.session_state.searched = False
     st.session_state.page = 1
@@ -927,10 +892,12 @@ st.title(
     "🚗 車種別 適合情報検索"
 )
 
+
 st.caption(
-    f"登録データ：{len(df):,}件　"
-    f"｜ 車種統合ルール：{len(CAR_NAME_LOOKUP):,}件"
+    f"登録データ：{len(df):,}件"
+    f" ｜ 車種統合ルール：{len(CAR_NAME_LOOKUP):,}件"
 )
+
 
 st.write(
     "車両を選択したあと、商品条件を指定して検索してください。"
@@ -938,7 +905,7 @@ st.write(
 
 
 # ============================================================
-# ① 車両
+# ① 車両選択
 # ============================================================
 
 st.subheader(
@@ -946,10 +913,8 @@ st.subheader(
 )
 
 
-vehicle_col1, vehicle_col2, vehicle_col3 = (
-    st.columns(
-        3
-    )
+row_vehicle_1, row_vehicle_2 = st.columns(
+    2
 )
 
 
@@ -969,7 +934,7 @@ makers = sorted(
 )
 
 
-with vehicle_col1:
+with row_vehicle_1:
 
     selected_maker = st.selectbox(
         "車両メーカー",
@@ -1003,20 +968,22 @@ if selected_maker != "指定なし":
 
 
 # ============================================================
-# 車種候補
-#
-# ここでExcel統合マスターを適用
+# 統合車種一覧
 # ============================================================
 
 merged_car_names = []
 
 
-for _, row in car_source_df[
-    [
-        "メーカー",
-        "車種"
+for _, row in (
+    car_source_df[
+        [
+            "メーカー",
+            "車種"
+        ]
     ]
-].drop_duplicates().iterrows():
+    .drop_duplicates()
+    .iterrows()
+):
 
     merged_name = get_merged_car_name(
         row[
@@ -1026,6 +993,7 @@ for _, row in car_source_df[
             "車種"
         ]
     )
+
 
     if merged_name:
 
@@ -1043,7 +1011,7 @@ cars = sorted(
 )
 
 
-with vehicle_col2:
+with row_vehicle_2:
 
     selected_car = st.selectbox(
         "車種",
@@ -1057,90 +1025,102 @@ with vehicle_col2:
 
 
 # ============================================================
-# 選択車種に属する元データ抽出
+# 年月選択
 # ============================================================
 
-year_source_df = car_source_df.copy()
+st.write(
+    "#### 年式"
+)
 
 
-if selected_car != "指定なし":
+year_col, month_col = st.columns(
+    2
+)
 
-    car_mask = year_source_df.apply(
-        lambda row:
-        get_merged_car_name(
-            row.get(
-                "メーカー",
-                ""
-            ),
-            row.get(
-                "車種",
-                ""
-            )
-        )
-        ==
-        selected_car,
-        axis=1
+
+# ============================================================
+# 現在年
+# ============================================================
+
+current_year = datetime.now().year
+
+
+year_options = [
+    "指定なし"
+]
+
+
+year_lookup = {}
+
+
+for year in range(
+    current_year,
+    1979,
+    -1
+):
+
+    label = year_display_label(
+        year
     )
 
-    year_source_df = year_source_df[
-        car_mask
-    ]
+    year_options.append(
+        label
+    )
+
+    year_lookup[
+        label
+    ] = year
 
 
-# ============================================================
-# 年式候補
-# ============================================================
+with year_col:
 
-year_candidates = []
+    selected_year_label = st.selectbox(
+        "年",
+        year_options,
+        key="year_select"
+    )
 
 
-if "年式原文" in year_source_df.columns:
+with month_col:
 
-    year_candidates.extend(
+    selected_month_label = st.selectbox(
+        "月",
         [
-            normalize_year_text(x)
-            for x in
-            year_source_df[
-                "年式原文"
-            ].unique()
-            if normalize_year_text(x)
-        ]
+            "指定なし",
+            "1月",
+            "2月",
+            "3月",
+            "4月",
+            "5月",
+            "6月",
+            "7月",
+            "8月",
+            "9月",
+            "10月",
+            "11月",
+            "12月",
+        ],
+        key="month_select"
     )
 
 
-if "年式" in year_source_df.columns:
-
-    year_candidates.extend(
-        [
-            normalize_year_text(x)
-            for x in
-            year_source_df[
-                "年式"
-            ].unique()
-            if normalize_year_text(x)
-        ]
-    )
-
-
-year_candidates = sorted(
-    list(
-        dict.fromkeys(
-            year_candidates
-        )
+selected_year = (
+    year_lookup.get(
+        selected_year_label
     )
 )
 
 
-with vehicle_col3:
+selected_month = None
 
-    selected_year_text = st.selectbox(
-        "年式",
-        [
-            "指定なし"
-        ]
-        +
-        year_candidates,
-        key="year_select"
+
+if selected_month_label != "指定なし":
+
+    selected_month = int(
+        selected_month_label.replace(
+            "月",
+            ""
+        )
     )
 
 
@@ -1153,23 +1133,14 @@ st.subheader(
 )
 
 
-row1_col1, row1_col2, row1_col3 = (
+product_row1_col1, product_row1_col2, product_row1_col3 = (
     st.columns(
         3
     )
 )
 
 
-with row1_col1:
-
-    year_input = st.text_input(
-        "年式を直接入力",
-        placeholder="例：2026 / R8 / H30",
-        key="year_input"
-    )
-
-
-with row1_col2:
+with product_row1_col1:
 
     model_keyword = st.text_input(
         "型式",
@@ -1178,19 +1149,19 @@ with row1_col2:
     )
 
 
-with row1_col3:
+product_makers = sorted(
+    [
+        clean_text(x)
+        for x in
+        df[
+            "商品メーカー"
+        ].unique()
+        if clean_text(x)
+    ]
+)
 
-    product_makers = sorted(
-        [
-            clean_text(x)
-            for x in
-            df[
-                "商品メーカー"
-            ].unique()
-            if clean_text(x)
-        ]
-    )
 
+with product_row1_col2:
 
     selected_product_maker = st.selectbox(
         "商品メーカー",
@@ -1204,7 +1175,7 @@ with row1_col3:
 
 
 # ============================================================
-# 商品メーカー → カテゴリ
+# カテゴリ候補
 # ============================================================
 
 category_source_df = df.copy()
@@ -1235,14 +1206,7 @@ categories = sorted(
 )
 
 
-row2_col1, row2_col2, row2_col3 = (
-    st.columns(
-        3
-    )
-)
-
-
-with row2_col1:
+with product_row1_col3:
 
     selected_category = st.selectbox(
         "カテゴリ",
@@ -1255,7 +1219,14 @@ with row2_col1:
     )
 
 
-with row2_col2:
+product_row2_col1, product_row2_col2 = (
+    st.columns(
+        2
+    )
+)
+
+
+with product_row2_col1:
 
     product_code = st.text_input(
         "商品型番",
@@ -1264,7 +1235,7 @@ with row2_col2:
     )
 
 
-with row2_col3:
+with product_row2_col2:
 
     product_name = st.text_input(
         "商品名",
@@ -1306,7 +1277,7 @@ with filter_col2:
 
 
 # ============================================================
-# 検索ボタン
+# 検索
 # ============================================================
 
 if st.button(
@@ -1316,6 +1287,7 @@ if st.button(
 ):
 
     st.session_state.searched = True
+
     st.session_state.page = 1
 
 
@@ -1335,7 +1307,10 @@ if not st.session_state.searched:
 search_df = df.copy()
 
 
+# ------------------------------------------------------------
 # メーカー
+# ------------------------------------------------------------
+
 if selected_maker != "指定なし":
 
     search_df = search_df[
@@ -1349,7 +1324,10 @@ if selected_maker != "指定なし":
     ]
 
 
-# 車種統合マスター
+# ------------------------------------------------------------
+# 統合車種
+# ------------------------------------------------------------
+
 if selected_car != "指定なし":
 
     car_mask = search_df.apply(
@@ -1369,83 +1347,29 @@ if selected_car != "指定なし":
         axis=1
     )
 
+
     search_df = search_df[
         car_mask
     ]
 
 
-# 年式選択
-if selected_year_text != "指定なし":
+# ------------------------------------------------------------
+# 年月
+# ------------------------------------------------------------
 
-    selected_normalized_year = (
-        normalize_year_text(
-            selected_year_text
-        )
+if selected_year is not None:
+
+    search_df = filter_by_year_month(
+        search_df,
+        selected_year,
+        selected_month
     )
 
-    year_mask = pd.Series(
-        False,
-        index=search_df.index
-    )
 
-
-    if "年式原文" in search_df.columns:
-
-        year_mask = (
-            year_mask
-            |
-            search_df[
-                "年式原文"
-            ].map(
-                normalize_year_text
-            ).eq(
-                selected_normalized_year
-            )
-        )
-
-
-    if "年式" in search_df.columns:
-
-        year_mask = (
-            year_mask
-            |
-            search_df[
-                "年式"
-            ].map(
-                normalize_year_text
-            ).eq(
-                selected_normalized_year
-            )
-        )
-
-
-    search_df = search_df[
-        year_mask
-    ]
-
-
-# 年式直接入力
-if year_input:
-
-    target_year = convert_year_input(
-        year_input
-    )
-
-    if target_year is None:
-
-        st.warning(
-            "入力された年式を判定できません。"
-        )
-
-    else:
-
-        search_df = filter_by_year(
-            search_df,
-            target_year
-        )
-
-
+# ------------------------------------------------------------
 # 型式
+# ------------------------------------------------------------
+
 if model_keyword:
 
     model_mask = pd.Series(
@@ -1487,7 +1411,10 @@ if model_keyword:
     ]
 
 
+# ------------------------------------------------------------
 # 商品メーカー
+# ------------------------------------------------------------
+
 if selected_product_maker != "指定なし":
 
     search_df = search_df[
@@ -1501,7 +1428,10 @@ if selected_product_maker != "指定なし":
     ]
 
 
+# ------------------------------------------------------------
 # カテゴリ
+# ------------------------------------------------------------
+
 if selected_category != "指定なし":
 
     search_df = search_df[
@@ -1515,7 +1445,10 @@ if selected_category != "指定なし":
     ]
 
 
-# 型番
+# ------------------------------------------------------------
+# 商品型番
+# ------------------------------------------------------------
+
 if product_code:
 
     search_df = search_df[
@@ -1528,7 +1461,10 @@ if product_code:
     ]
 
 
+# ------------------------------------------------------------
 # 商品名
+# ------------------------------------------------------------
+
 if product_name:
 
     search_df = search_df[
@@ -1541,7 +1477,10 @@ if product_name:
     ]
 
 
-# 現行商品のみ
+# ------------------------------------------------------------
+# 現行
+# ------------------------------------------------------------
+
 if current_only:
 
     if "生産状態" in search_df.columns:
@@ -1557,7 +1496,10 @@ if current_only:
         ]
 
 
+# ------------------------------------------------------------
 # 適合のみ
+# ------------------------------------------------------------
+
 if fit_only:
 
     fit_mask = search_df.apply(
@@ -1569,6 +1511,7 @@ if fit_only:
         "適合",
         axis=1
     )
+
 
     search_df = search_df[
         fit_mask
@@ -1600,7 +1543,6 @@ with retry_col1:
     ):
 
         st.session_state.searched = False
-
         st.rerun()
 
 
@@ -1612,12 +1554,11 @@ with retry_col2:
     ):
 
         reset_conditions()
-
         st.rerun()
 
 
 # ============================================================
-# ③ 結果
+# 結果
 # ============================================================
 
 st.subheader(
@@ -1625,18 +1566,14 @@ st.subheader(
 )
 
 
-# ============================================================
-# 適合状態集計
-# ============================================================
-
-result_summary = search_df.copy()
+summary_df = search_df.copy()
 
 
-if not result_summary.empty:
+if not summary_df.empty:
 
-    result_summary[
+    summary_df[
         "最終適合状態"
-    ] = result_summary.apply(
+    ] = summary_df.apply(
         get_final_fitment,
         axis=1
     )
@@ -1644,7 +1581,7 @@ if not result_summary.empty:
 
     fit_count = int(
         (
-            result_summary[
+            summary_df[
                 "最終適合状態"
             ]
             ==
@@ -1655,7 +1592,7 @@ if not result_summary.empty:
 
     check_count = int(
         (
-            result_summary[
+            summary_df[
                 "最終適合状態"
             ]
             ==
@@ -1666,13 +1603,14 @@ if not result_summary.empty:
 
     ng_count = int(
         (
-            result_summary[
+            summary_df[
                 "最終適合状態"
             ]
             ==
             "不適合"
         ).sum()
     )
+
 
 else:
 
@@ -1690,7 +1628,9 @@ with metric1:
 
     st.metric(
         "該当件数",
-        f"{len(search_df):,}"
+        len(
+            search_df
+        )
     )
 
 
@@ -1698,7 +1638,7 @@ with metric2:
 
     st.metric(
         "✅ 適合",
-        f"{fit_count:,}"
+        fit_count
     )
 
 
@@ -1706,7 +1646,7 @@ with metric3:
 
     st.metric(
         "⚠️ 要確認",
-        f"{check_count:,}"
+        check_count
     )
 
 
@@ -1714,7 +1654,7 @@ with metric4:
 
     st.metric(
         "❌ 不適合",
-        f"{ng_count:,}"
+        ng_count
     )
 
 
@@ -1728,7 +1668,7 @@ if search_df.empty:
 
 
 # ============================================================
-# 検索条件表示
+# 検索条件
 # ============================================================
 
 with st.expander(
@@ -1741,24 +1681,27 @@ with st.expander(
     )
 
     st.write(
-        "**統合車種名：**",
+        "**車種：**",
         selected_car
     )
 
-    st.write(
-        "**年式：**",
-        selected_year_text
-    )
 
-    st.write(
-        "**商品メーカー：**",
-        selected_product_maker
-    )
+    if selected_year is not None:
 
-    st.write(
-        "**カテゴリ：**",
-        selected_category
-    )
+        st.write(
+            "**年：**",
+            year_display_label(
+                selected_year
+            )
+        )
+
+
+    if selected_month is not None:
+
+        st.write(
+            "**月：**",
+            f"{selected_month}月"
+        )
 
 
 # ============================================================
@@ -1942,10 +1885,6 @@ for _, row in page_df.iterrows():
         )
 
 
-        # ----------------------------------------------------
-        # 車両
-        # ----------------------------------------------------
-
         with left:
 
             vehicle_maker = clean_text(
@@ -1980,35 +1919,14 @@ for _, row in page_df.iterrows():
             )
 
 
-            # 元データと統合名が違う時だけ表示
-            if (
-                merged_car_name
-                !=
-                original_car_name
-            ):
+            if merged_car_name != original_car_name:
 
                 st.caption(
                     f"統合検索車種：{merged_car_name}"
                 )
 
 
-            vehicle_type = clean_text(
-                row.get(
-                    "車両タイプ",
-                    ""
-                )
-            )
-
-
-            if vehicle_type:
-
-                st.write(
-                    "**車両タイプ：**",
-                    vehicle_type
-                )
-
-
-            year = clean_text(
+            year_text = clean_text(
                 row.get(
                     "年式原文",
                     ""
@@ -2016,9 +1934,9 @@ for _, row in page_df.iterrows():
             )
 
 
-            if not year:
+            if not year_text:
 
-                year = clean_text(
+                year_text = clean_text(
                     row.get(
                         "年式",
                         ""
@@ -2026,13 +1944,11 @@ for _, row in page_df.iterrows():
                 )
 
 
-            if year:
+            if year_text:
 
                 st.write(
                     "**年式：**",
-                    normalize_year_text(
-                        year
-                    )
+                    year_text
                 )
 
 
@@ -2062,16 +1978,13 @@ for _, row in page_df.iterrows():
                 )
 
 
-        # ----------------------------------------------------
-        # 商品
-        # ----------------------------------------------------
-
         with right:
 
             st.write(
                 "**商品メーカー：**",
                 maker
             )
+
 
             st.write(
                 "**カテゴリ：**",
@@ -2148,24 +2061,17 @@ for _, row in page_df.iterrows():
 
         if maker == "Pioneer":
 
-            data_type_lower = (
-                data_type.lower()
-            )
-
-
-            if data_type_lower == "select":
+            if data_type.lower() == "select":
 
                 st.info(
-                    "Pioneer公式「車種別カーナビセレクト」に"
-                    "基づく判定です。"
+                    "Pioneer公式「車種別カーナビセレクト」に基づく判定です。"
                 )
 
 
-            elif data_type_lower == "gtable":
+            elif data_type.lower() == "gtable":
 
                 st.info(
-                    "Pioneer公式の商品別適合情報"
-                    "（gtable）に基づく判定です。"
+                    "Pioneer公式の商品別適合情報（gtable）に基づく判定です。"
                 )
 
 
@@ -2178,7 +2084,7 @@ for _, row in page_df.iterrows():
                 )
 
 
-            elif data_type_lower == "business補完":
+            elif data_type.lower() == "business補完":
 
                 source_model = clean_text(
                     row.get(
@@ -2187,18 +2093,12 @@ for _, row in page_df.iterrows():
                     )
                 )
 
+
                 if source_model:
 
                     st.info(
                         f"{source_model} のPioneer公式適合情報を"
-                        "参照して生成した業務用モデル候補です。"
-                    )
-
-                else:
-
-                    st.info(
-                        "Pioneer公式適合情報を参照して生成した"
-                        "業務用モデル候補です。"
+                        "参照した業務用モデル候補です。"
                     )
 
 
@@ -2221,10 +2121,6 @@ for _, row in page_df.iterrows():
                 kit
             )
 
-
-        # ----------------------------------------------------
-        # 関連品番
-        # ----------------------------------------------------
 
         related = clean_text(
             row.get(
